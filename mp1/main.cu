@@ -22,13 +22,11 @@ __global__ void vecAdd(float *in1, float *in2, float *out, int len) {
 }
 
 float* importData(char* fname, int* len) {
-  int tmp;
   FILE* infile = fopen(fname, "r");
   fscanf(infile, "%d\n", len);
   float* data = (float*)malloc((*len)*sizeof(float));
   for(int i = 0; i < *len; i++) {
-    fscanf(infile, "%d\n", &tmp);
-    data[i] = (float)tmp;
+    fscanf(infile, "%f\n", &data[i]);
   }
   return data;
 }
@@ -37,10 +35,10 @@ void printOutput(float* data, int len) {
   printf("[");
   for(int i = 0; i < len; i++) {
     if(i == len-1) {
-      printf("%d]\n", (int)data[i]);
+      printf("%f]\n", data[i]);
     }
     else {
-      printf("%d, ", (int)data[i]);
+      printf("%f, ", data[i]);
     }
   }
 }
