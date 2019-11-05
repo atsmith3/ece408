@@ -1,0 +1,3 @@
+[submodule "WebGPU"]
+	path = WebGPU
+	url = https://github.com/abduld/WebGPU.git

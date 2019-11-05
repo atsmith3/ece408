@@ -1,7 +1,15 @@
 *.swp
+*.o
+*.run
+*.log
+*.out
+
+run.ppm
+
 mp1/vector_add
 mp2/mat_mul
 mp3/mat_mul
 mp4/conv
 mp5.1/reduce
 mp5.2/scan
+mp6/histogram
