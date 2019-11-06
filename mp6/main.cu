@@ -31,25 +31,98 @@ __global__ void u2f(uint8_t* input, float* output, int width, int height, int ch
 }
 
 __global__ void conv_gs(uint8_t* input, uint8_t* gs, int width, int height, int channels) {
+  int pos = blockIdx.x*blockDim.x + threadIdx.x;
+  if(pos < width*height) {
+    uint8_t r = input[channels*pos];
+    uint8_t b = input[channels*pos+1];
+    uint8_t g = input[channels*pos+2];
+    gs[pos] = (uint8_t) (0.21*r + 0.71*g + 0.07*b);
+  }
+}
 
+__global__ void histogram(uint8_t* gs, uint32_t* hist, int width, int height) {
+  __shared__ uint32_t local_hist[HISTOGRAM_LENGTH];
+  int pos = blockDim.x*blockIdx.x + threadIdx.x;
+  if(threadIdx.x < HISTOGRAM_LENGTH) {
+    local_hist[pos] = 0;
+  }
+
+  // Compute local histogram
+  __syncthreads();
+  if(pos < width*height) {
+    atomicAdd(&(local_hist[gs[pos]]), 1);
+  }
+  
+  // Add local to global histogram
+  __syncthreads();
+  if(threadIdx.x < HISTOGRAM_LENGTH) {
+    atomicAdd(&(hist[pos]), local_hist[pos]);
+  }
+}
+
+__global__ void scan(uint32_t* hist, float* cdf, int width, int height) {
+  __shared__ float ls[HISTOGRAM_LENGTH];
+
+  int stride = 0x1;
+  int i = threadIdx.x;
+  int ind = threadIdx.x + blockIdx.x*blockDim.x;
+  float temp;
+
+  if(ind < HISTOGRAM_LENGTH){
+    ls[i] = (float)hist[ind];
+  }
+  else {
+    ls[i] = 0.0;
+  }
+  
+  for(stride = 0x1; stride < blockDim.x; stride = stride << 1) {
+    __syncthreads();
+    if(i >= stride) {
+      temp = ls[i] + ls[i-stride];
+    }
+    __syncthreads();
+    if(i >= stride) {
+      ls[i] = temp;
+    }
+  }
+
+  __syncthreads();
+  if(ind < HISTOGRAM_LENGTH) {
+    cdf[ind] = ls[i]/((float)(width*height));
+  } 
 
 }
 
-__global__ void histogram(uint8_t* gs, uint32_t* hist, int height, int width, int len) {
-
-
-}
-
-__global__ void scan(uint32_t* hist, uint32_t* cdf, int len) {
-
-
-}
-
-__global__ void equalize(uint32_t* hist, int len, uint8_t* image, int height, int width, int channels) {
+__global__ void equalize(float* cdf, int len, uint8_t* image, int height, int width, int channels) {
 
 //  return (uint8_t)min(max((255*(cdf[val] - cdfmin)/(1.0 - cdfmini)), 0), 255.0);
 
 }
+
+void printcdf(float* cdf) {
+  printf("cdf: [");
+  for(int i = 0; i < HISTOGRAM_LENGTH; i++) {
+    if(i == HISTOGRAM_LENGTH - 1) {
+      printf("%.2f]\n", cdf[i]);
+    }
+    else {
+      printf("%.2f, ", cdf[i]);
+    }
+  }
+}
+
+void printhist(uint32_t* hist) {
+  printf("hist: [");
+  for(int i = 0; i < HISTOGRAM_LENGTH; i++) {
+    if(i == HISTOGRAM_LENGTH - 1) {
+      printf("%u]\n", hist[i]);
+    }
+    else {
+      printf("%u, ", hist[i]);
+    }
+  }
+}
+  
 
 int main(int argc, char **argv) {
   wbArg_t args;
@@ -80,11 +153,20 @@ int main(int argc, char **argv) {
   float* deviceOutputImage;
   uint8_t* deviceUcharImage;
   uint8_t* deviceGSImage;
+  uint32_t* deviceHist;
+  uint32_t* hostHist;
+  float* deviceCDF;
+  float* hostCDF;
 
   _check(cudaMalloc((void**)&deviceInputImage, imageWidth*imageHeight*imageChannels*sizeof(float)));
   _check(cudaMalloc((void**)&deviceOutputImage, imageWidth*imageHeight*imageChannels*sizeof(float)));
   _check(cudaMalloc((void**)&deviceUcharImage, imageWidth*imageHeight*imageChannels*sizeof(uint8_t)));
   _check(cudaMalloc((void**)&deviceGSImage, imageWidth*imageHeight*sizeof(uint8_t)));
+  _check(cudaMalloc((void**)&deviceHist, HISTOGRAM_LENGTH*sizeof(uint32_t)));
+  _check(cudaMalloc((void**)&deviceCDF, HISTOGRAM_LENGTH*sizeof(float)));
+
+  hostHist = (uint32_t*)malloc(HISTOGRAM_LENGTH*sizeof(uint32_t));
+  hostCDF = (float*)malloc(HISTOGRAM_LENGTH*sizeof(float));
 
   _check(cudaMemcpy(deviceInputImage, hostInputImageData, imageWidth*imageHeight*imageChannels*sizeof(float), cudaMemcpyHostToDevice));
 
@@ -96,6 +178,25 @@ int main(int argc, char **argv) {
   block = dim3(512, 1, 1);
   f2u<<<grid, block>>>(deviceInputImage, deviceUcharImage, imageWidth, imageHeight, imageChannels);
   cudaDeviceSynchronize();
+
+  // Convert to Greyscale:
+  grid = dim3(ceil((float)(imageWidth*imageHeight)/512), 1, 1);
+  block = dim3(512, 1, 1);
+  conv_gs<<<grid, block>>>(deviceUcharImage, deviceGSImage, imageWidth, imageHeight, imageChannels);
+
+  // Calculate Histogram:
+  grid = dim3(ceil((float)(imageWidth*imageHeight)/512), 1, 1);
+  block = dim3(512, 1, 1);
+  histogram<<<grid, block>>>(deviceGSImage, deviceHist, imageWidth, imageHeight);
+  _check(cudaMemcpy(hostHist, deviceHist, HISTOGRAM_LENGTH*sizeof(uint32_t), cudaMemcpyDeviceToHost));
+  printhist(hostHist);
+
+  // Calculate CDF:
+  grid = dim3(1, 1, 1);
+  block = dim3(HISTOGRAM_LENGTH, 1, 1);
+  scan<<<grid, block>>>(deviceHist, deviceCDF, imageWidth, imageHeight);
+  _check(cudaMemcpy(hostCDF, deviceCDF, HISTOGRAM_LENGTH*sizeof(float), cudaMemcpyDeviceToHost));
+  printcdf(hostCDF);
 
   // Convert uint8_t to float
   grid = dim3(ceil((float)(imageWidth*imageHeight*imageChannels)/512), 1, 1);
