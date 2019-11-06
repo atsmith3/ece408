@@ -44,7 +44,7 @@ __global__ void histogram(uint8_t* gs, uint32_t* hist, int width, int height) {
   __shared__ uint32_t local_hist[HISTOGRAM_LENGTH];
   int pos = blockDim.x*blockIdx.x + threadIdx.x;
   if(threadIdx.x < HISTOGRAM_LENGTH) {
-    local_hist[pos] = 0;
+    local_hist[threadIdx.x] = 0;
   }
 
   // Compute local histogram
@@ -56,7 +56,7 @@ __global__ void histogram(uint8_t* gs, uint32_t* hist, int width, int height) {
   // Add local to global histogram
   __syncthreads();
   if(threadIdx.x < HISTOGRAM_LENGTH) {
-    atomicAdd(&(hist[pos]), local_hist[pos]);
+    atomicAdd(&(hist[threadIdx.x]), local_hist[threadIdx.x]);
   }
 }
 
@@ -164,6 +164,9 @@ int main(int argc, char **argv) {
   _check(cudaMalloc((void**)&deviceGSImage, imageWidth*imageHeight*sizeof(uint8_t)));
   _check(cudaMalloc((void**)&deviceHist, HISTOGRAM_LENGTH*sizeof(uint32_t)));
   _check(cudaMalloc((void**)&deviceCDF, HISTOGRAM_LENGTH*sizeof(float)));
+
+  _check(cudaMemset((void*)deviceHist, 0, HISTOGRAM_LENGTH*sizeof(uint32_t)));
+  _check(cudaMemset((void*)deviceCDF, 0, HISTOGRAM_LENGTH*sizeof(float)));
 
   hostHist = (uint32_t*)malloc(HISTOGRAM_LENGTH*sizeof(uint32_t));
   hostCDF = (float*)malloc(HISTOGRAM_LENGTH*sizeof(float));
