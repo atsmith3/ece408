@@ -93,10 +93,11 @@ __global__ void scan(uint32_t* hist, float* cdf, int width, int height) {
 
 }
 
-__global__ void equalize(float* cdf, int len, uint8_t* image, int height, int width, int channels) {
-
-//  return (uint8_t)min(max((255*(cdf[val] - cdfmin)/(1.0 - cdfmini)), 0), 255.0);
-
+__global__ void equalize(float* cdf, uint8_t* input, uint8_t* output, int width, int height, int channels) {
+  int pos = blockIdx.x*blockDim.x + threadIdx.x;
+  if(pos < width*height*channels) {
+    output[pos] = (uint8_t)min(max((255.0*(cdf[input[pos]] - cdf[0])/(1.0 - cdf[0])), 0.0), 255.0);
+  }
 }
 
 void printcdf(float* cdf) {
@@ -157,6 +158,7 @@ int main(int argc, char **argv) {
   uint32_t* hostHist;
   float* deviceCDF;
   float* hostCDF;
+  uint8_t* deviceEqImage;
 
   _check(cudaMalloc((void**)&deviceInputImage, imageWidth*imageHeight*imageChannels*sizeof(float)));
   _check(cudaMalloc((void**)&deviceOutputImage, imageWidth*imageHeight*imageChannels*sizeof(float)));
@@ -164,6 +166,7 @@ int main(int argc, char **argv) {
   _check(cudaMalloc((void**)&deviceGSImage, imageWidth*imageHeight*sizeof(uint8_t)));
   _check(cudaMalloc((void**)&deviceHist, HISTOGRAM_LENGTH*sizeof(uint32_t)));
   _check(cudaMalloc((void**)&deviceCDF, HISTOGRAM_LENGTH*sizeof(float)));
+  _check(cudaMalloc((void**)&deviceEqImage, imageWidth*imageHeight*imageChannels*sizeof(uint8_t)));
 
   _check(cudaMemset((void*)deviceHist, 0, HISTOGRAM_LENGTH*sizeof(uint32_t)));
   _check(cudaMemset((void*)deviceCDF, 0, HISTOGRAM_LENGTH*sizeof(float)));
@@ -201,10 +204,16 @@ int main(int argc, char **argv) {
   _check(cudaMemcpy(hostCDF, deviceCDF, HISTOGRAM_LENGTH*sizeof(float), cudaMemcpyDeviceToHost));
   printcdf(hostCDF);
 
+  // Equalize Image:
+  grid = dim3(ceil((float)(imageWidth*imageHeight*imageChannels)/512), 1, 1);
+  block = dim3(512, 1, 1);
+  equalize<<<grid, block>>>(deviceCDF, deviceUcharImage, deviceEqImage, imageWidth, imageHeight, imageChannels);
+  cudaDeviceSynchronize();
+
   // Convert uint8_t to float
   grid = dim3(ceil((float)(imageWidth*imageHeight*imageChannels)/512), 1, 1);
   block = dim3(512, 1, 1);
-  u2f<<<grid, block>>>(deviceUcharImage, deviceOutputImage, imageWidth, imageHeight, imageChannels);
+  u2f<<<grid, block>>>(deviceEqImage, deviceOutputImage, imageWidth, imageHeight, imageChannels);
   cudaDeviceSynchronize();
 
   _check(cudaMemcpy(hostOutputImageData, deviceOutputImage, imageWidth*imageHeight*imageChannels*sizeof(float), cudaMemcpyDeviceToHost));
