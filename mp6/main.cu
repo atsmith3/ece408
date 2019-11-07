@@ -5,17 +5,6 @@
 
 #define HISTOGRAM_LENGTH 256
 
-#define _check(stmt)                                                      \
-  do {                                                                    \
-    cudaError_t err = stmt;                                               \
-    if (err != cudaSuccess) {                                             \
-      printf("Failed to run stmt ", #stmt);                               \
-      printf("Got CUDA error ...  ", cudaGetErrorString(err));            \
-      return -1;                                                          \
-    }                                                                     \
-  } while (0)
-
-
 __global__ void f2u(float* input, uint8_t* output, int width, int height, int channels) {
   int pos = blockIdx.x*blockDim.x + threadIdx.x;
   if(pos < width*height*channels) {
@@ -135,8 +124,6 @@ int main(int argc, char **argv) {
   float *hostInputImageData;
   float *hostOutputImageData;
   const char *inputImageFile;
-
-  //@@ Insert more code here
   
   args = wbArg_read(argc, argv); /* parse the input arguments */
   
@@ -219,8 +206,6 @@ int main(int argc, char **argv) {
   cudaMemcpy(hostOutputImageData, deviceOutputImage, imageWidth*imageHeight*imageChannels*sizeof(float), cudaMemcpyDeviceToHost);
 
   wbSolution(args, outputImage);
-
-  //@@ insert code here
 
   return 0;
 }

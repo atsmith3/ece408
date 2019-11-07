@@ -5,6 +5,7 @@
 *.out
 
 run.ppm
+run.raw
 
 mp1/vector_add
 mp2/mat_mul
@@ -13,3 +14,4 @@ mp4/conv
 mp5.1/reduce
 mp5.2/scan
 mp6/histogram
+mp7/sparse
