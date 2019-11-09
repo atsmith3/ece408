@@ -1,15 +1,20 @@
 #include <wb.h>
 
-__global__ void spmvJDSKernel(float *out, int *matColStart, int *matCols,
-                              int *matRowPerm, int *matRows,
-                              float *matData, float *vec, int dim) {
-
+__global__ void spmvJDSKernel(float *out, int *matColStart, int *matCols, int *matRowPerm, int *matRows, float *matData, float *vec, int dim) {
+  int pos = blockIdx.x*blockDim.x + threadIdx.x;
+  float d_prod = 0.0;
+  if(pos < dim) {
+    for(int it = 0; it < matRows[pos]; it++) {
+      d_prod += matData[matColStart[it] + pos]*vec[matCols[matColStart[it] + pos]];
+    }
+    out[matRowPerm[pos]] = d_prod;
+  }
 }
 
-static void spmvJDS(float *out, int *matColStart, int *matCols,
-                    int *matRowPerm, int *matRows, float *matData,
-                    float *vec, int dim) {
-
+static void spmvJDS(float *out, int *matColStart, int *matCols, int *matRowPerm, int *matRows, float *matData, float *vec, int dim) {
+  dim3 grid(ceil((float)dim/512.0), 1, 1);
+  dim3 block(512, 1, 1);
+  spmvJDSKernel<<<grid, block>>>(out, matColStart, matCols, matRowPerm, matRows, matData, vec, dim);
 }
 
 int main(int argc, char **argv) {
